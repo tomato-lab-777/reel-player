@@ -1,4 +1,4 @@
-const CACHE_NAME = "reel-shell-v1";
+const CACHE_NAME = "reel-shell-v2";
 const SHELL_FILES = [
   "./",
   "./index.html",
@@ -25,7 +25,10 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   // Only handle same-origin GET requests for the app shell.
+  // Cross-origin requests (e.g. the jsmediatags CDN script) pass straight through.
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return (
