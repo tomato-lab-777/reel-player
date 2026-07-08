@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Reel</title>
+<meta name="theme-color" content="#0B0B0F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Reel">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --bg-0:#0B0B0F;
+    --bg-1:#151319;
+    --panel:#1C1A22;
+    --line:rgba(255,255,255,0.08);
+    --ink:#F4F2F7;
+    --ink-dim:#8A8794;
+    --accent:#B8FF3C;
+    --accent-dim:rgba(184,255,60,0.14);
+    --danger:#FF5C5C;
+    --safe-top: env(safe-area-inset-top);
+    --safe-bottom: env(safe-area-inset-bottom);
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; height:100%; overflow:hidden;
+    background:var(--bg-0);
+    color:var(--ink);
+    font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Hiragino Sans", sans-serif;
+  }
+  body{
+    display:flex; flex-direction:column;
+    height:100dvh;
+    background:
+      radial-gradient(120% 60% at 50% -10%, #221F2B 0%, var(--bg-0) 60%);
+  }
+
+  /* ---------- Empty state ---------- */
+  #empty{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:32px; text-align:center; gap:18px;
+  }
+  #empty .mark{
+    width:72px; height:72px; border-radius:22px;
+    background:var(--accent-dim);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #empty .mark svg{ width:34px; height:34px; }
+  #empty h1{ font-size:22px; font-weight:700; margin:0; letter-spacing:-0.02em; }
+  #empty p{ font-size:14.5px; color:var(--ink-dim); margin:0; max-width:270px; line-height:1.6; }
+  .btn-primary{
+    appearance:none; border:none; cursor:pointer;
+    background:var(--accent); color:#0B0B0F;
+    font-size:15.5px; font-weight:700;
+    padding:14px 28px; border-radius:100px;
+    letter-spacing:-0.01em;
+  }
+  .btn-primary:active{ transform:scale(0.96); }
+  #folderInput{ display:none; }
+
+  /* ---------- Player ---------- */
+  #player{ flex:1; display:none; flex-direction:column; min-height:0; padding-top:var(--safe-top); }
+  #player.active{ display:flex; }
+
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px 4px;
+  }
+  .topbar .label{ font-size:12px; font-weight:700; letter-spacing:0.14em; color:var(--ink-dim); text-transform:uppercase; }
+  .icon-btn{
+    width:34px; height:34px; border-radius:50%;
+    background:var(--panel); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--ink); cursor:pointer;
+  }
+  .icon-btn svg{ width:16px; height:16px; }
+  .icon-btn:active{ transform:scale(0.9); }
+
+  .stage{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:6px 32px 0; min-height:0;
+  }
+
+  .disc-wrap{ position:relative; width:min(56vw, 240px); height:min(56vw, 240px); flex-shrink:1; }
+  .disc{
+    width:100%; height:100%; border-radius:50%;
+    background:
+      repeating-radial-gradient(circle at 50% 50%, #232028 0px, #232028 2px, #2b2732 3px, #2b2732 4px);
+    box-shadow: 0 20px 40px -14px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.06);
+    display:flex; align-items:center; justify-content:center;
+    animation: spin 9s linear infinite paused;
+  }
+  .disc.spinning{ animation-play-state:running; }
+  .disc::after{
+    content:""; position:absolute; inset:0; border-radius:50%;
+    background: conic-gradient(from 0deg, rgba(184,255,60,0.16), transparent 30%);
+  }
+  .disc-center{
+    width:26%; height:26%; border-radius:50%;
+    background:var(--accent); position:relative; z-index:2;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 2px 10px rgba(0,0,0,0.4);
+  }
+  .disc-center::after{
+    content:""; width:26%; height:26%; border-radius:50%; background:var(--bg-0);
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .meta{ margin-top:26px; text-align:center; width:100%; max-width:320px; }
+  .meta .title{ font-size:19px; font-weight:700; letter-spacing:-0.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .meta .artist{ font-size:13.5px; color:var(--ink-dim); margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .progress{ width:100%; max-width:340px; margin-top:20px; }
+  .progress input[type=range]{
+    width:100%; -webkit-appearance:none; appearance:none;
+    height:4px; border-radius:2px; background:var(--line); outline:none;
+  }
+  .progress input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:13px; height:13px; border-radius:50%;
+    background:var(--accent); border:none; margin-top:0;
+  }
+  .times{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink-dim); margin-top:6px; font-variant-numeric:tabular-nums; }
+
+  .controls{ display:flex; align-items:center; justify-content:center; gap:34px; margin-top:22px; }
+  .ctrl{ background:none; border:none; color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .ctrl svg{ width:24px; height:24px; }
+  .ctrl.play{
+    width:64px; height:64px; border-radius:50%; background:var(--accent); color:#0B0B0F;
+  }
+  .ctrl.play svg{ width:26px; height:26px; }
+  .ctrl:active{ transform:scale(0.9); }
+
+  .bottom-tabs{
+    display:flex; justify-content:center; gap:8px;
+    padding:16px 20px calc(14px + var(--safe-bottom));
+  }
+  .tab-btn{
+    flex:1; max-width:200px; text-align:center; padding:11px 0; border-radius:100px;
+    background:var(--panel); border:1px solid var(--line); color:var(--ink-dim);
+    font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .tab-btn:active{ transform:scale(0.97); }
+
+  /* ---------- Playlist sheet ---------- */
+  #sheet-backdrop{
+    position:fixed; inset:0; background:rgba(0,0,0,0.5); opacity:0; pointer-events:none;
+    transition:opacity .25s ease; z-index:10;
+  }
+  #sheet-backdrop.show{ opacity:1; pointer-events:auto; }
+  #sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:11;
+    background:var(--bg-1); border-radius:22px 22px 0 0;
+    border-top:1px solid var(--line);
+    transform:translateY(100%); transition:transform .3s cubic-bezier(.32,.72,0,1);
+    max-height:78vh; display:flex; flex-direction:column;
+    padding-bottom:var(--safe-bottom);
+  }
+  #sheet.show{ transform:translateY(0); }
+  .sheet-handle{ width:36px; height:4px; border-radius:2px; background:var(--line); margin:10px auto 4px; }
+  .sheet-head{ display:flex; align-items:center; justify-content:space-between; padding:8px 20px 12px; border-bottom:1px solid var(--line); }
+  .sheet-head h2{ font-size:15px; margin:0; }
+  .sheet-head .count{ font-size:12px; color:var(--ink-dim); }
+  #list{ overflow-y:auto; flex:1; padding:6px 8px; }
+  .row{
+    display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px; cursor:pointer;
+  }
+  .row:active{ background:var(--panel); }
+  .row.playing{ background:var(--accent-dim); }
+  .row .idx{ width:20px; text-align:center; font-size:12px; color:var(--ink-dim); flex-shrink:0; }
+  .row.playing .idx{ color:var(--accent); }
+  .row .name{ flex:1; min-width:0; font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row.playing .name{ color:var(--accent); font-weight:600; }
+  .row .del{ width:26px; height:26px; flex-shrink:0; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--ink-dim); }
+  .row .del svg{ width:13px; height:13px; }
+  .sheet-actions{ padding:12px 16px calc(10px + var(--safe-bottom)); border-top:1px solid var(--line); display:flex; gap:10px; }
+  .sheet-actions button{
+    flex:1; padding:12px 0; border-radius:14px; border:1px solid var(--line); background:var(--panel);
+    color:var(--ink); font-size:13.5px; font-weight:600; cursor:pointer;
+  }
+  .sheet-actions button.add{ color:var(--accent); border-color:rgba(184,255,60,0.3); }
+  .sheet-actions button.clear{ color:var(--danger); border-color:rgba(255,92,92,0.25); }
+</style>
+</head>
+<body>
+
+  <!-- Empty state: no library yet -->
+  <div id="empty">
+    <div class="mark">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="#B8FF3C" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" stroke="#B8FF3C" stroke-width="1.6"/><circle cx="18" cy="16" r="3" stroke="#B8FF3C" stroke-width="1.6"/></svg>
+    </div>
+    <h1>フォルダを読み込む</h1>
+    <p>iPhone内のmp3が入ったフォルダを選ぶと、そのまま再生用ライブラリになります。次回からはこの画面は出てきません。</p>
+    <button class="btn-primary" id="pickBtn">フォルダを選ぶ</button>
+    <input type="file" id="folderInput" webkitdirectory multiple accept="audio/*">
+  </div>
+
+  <!-- Player -->
+  <div id="player">
+    <div class="topbar">
+      <span class="label" id="libLabel">ライブラリ</span>
+      <div class="icon-btn" id="addMoreBtn" title="曲を追加">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="disc-wrap">
+        <div class="disc" id="disc">
+          <div class="disc-center"></div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="title" id="trackTitle">—</div>
+        <div class="artist" id="trackArtist">再生する曲を選んでください</div>
+      </div>
+      <div class="progress">
+        <input type="range" id="seek" min="0" max="1000" value="0" step="1">
+        <div class="times"><span id="curTime">0:00</span><span id="durTime">0:00</span></div>
+      </div>
+      <div class="controls">
+        <button class="ctrl" id="prevBtn" aria-label="前へ">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg>
+        </button>
+        <button class="ctrl play" id="playBtn" aria-label="再生">
+          <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l12-7z"/></svg>
+        </button>
+        <button class="ctrl" id="nextBtn" aria-label="次へ">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="bottom-tabs">
+      <div class="tab-btn" id="openListBtn">プレイリスト</div>
+    </div>
+  </div>
+
+  <!-- Playlist sheet -->
+  <div id="sheet-backdrop"></div>
+  <div id="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-head">
+      <h2>プレイリスト</h2>
+      <span class="count" id="listCount">0曲</span>
+    </div>
+    <div id="list"></div>
+    <div class="sheet-actions">
+      <button class="add" id="addMoreBtn2">＋ 曲を追加</button>
+      <button class="clear" id="clearBtn">全て削除</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- IndexedDB ----------
+  const DB_NAME = "reel-player";
+  const STORE = "tracks";
+  let db;
+
+  function openDB(){
+    return new Promise((resolve, reject)=>{
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = e => {
+        const d = e.target.result;
+        if(!d.objectStoreNames.contains(STORE)){
+          const s = d.createObjectStore(STORE, { keyPath:"id", autoIncrement:true });
+          s.createIndex("name", "name");
+        }
+      };
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror = e => reject(e.target.error);
+    });
+  }
+
+  function addTracks(files){
+    return new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE, "readwrite");
+      const store = tx.objectStore(STORE);
+      Array.from(files).forEach(f=>{
+        if(!/audio|mp3/i.test(f.type) && !/\.mp3$/i.test(f.name)) return;
+        store.add({ name:f.name.replace(/\.mp3$/i,""), blob:f, addedAt:Date.now() });
+      });
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = e=>reject(e.target.error);
+    });
+  }
+
+  function getAllTracks(){
+    return new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE, "readonly");
+      const store = tx.objectStore(STORE);
+      const req = store.getAll();
+      req.onsuccess = ()=>resolve(req.result.sort((a,b)=>a.name.localeCompare(b.name,'ja')));
+      req.onerror = e=>reject(e.target.error);
+    });
+  }
+
+  function deleteTrack(id){
+    return new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).delete(id);
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = e=>reject(e.target.error);
+    });
+  }
+
+  function clearAllTracks(){
+    return new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).clear();
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = e=>reject(e.target.error);
+    });
+  }
+
+  // ---------- State ----------
+  let playlist = [];
+  let currentIndex = -1;
+  let objectUrl = null;
+  const audio = new Audio();
+  audio.preload = "metadata";
+
+  // ---------- Elements ----------
+  const $ = id => document.getElementById(id);
+  const emptyEl = $("empty"), playerEl = $("player");
+  const pickBtn = $("pickBtn"), folderInput = $("folderInput");
+  const addMoreBtn = $("addMoreBtn"), addMoreBtn2 = $("addMoreBtn2");
+  const disc = $("disc");
+  const trackTitle = $("trackTitle"), trackArtist = $("trackArtist");
+  const seek = $("seek"), curTime = $("curTime"), durTime = $("durTime");
+  const playBtn = $("playBtn"), playIcon = $("playIcon"), prevBtn = $("prevBtn"), nextBtn = $("nextBtn");
+  const openListBtn = $("openListBtn"), sheet = $("sheet"), sheetBackdrop = $("sheet-backdrop");
+  const listEl = $("list"), listCount = $("listCount"), clearBtn = $("clearBtn");
+
+  const PLAY_ICON = '<path d="M8 5v14l12-7z"/>';
+  const PAUSE_ICON = '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>';
+
+  function fmtTime(s){
+    if(!isFinite(s)) return "0:00";
+    const m = Math.floor(s/60), sec = Math.floor(s%60);
+    return m + ":" + String(sec).padStart(2,"0");
+  }
+
+  // ---------- Rendering ----------
+  function renderList(){
+    listCount.textContent = playlist.length + "曲";
+    listEl.innerHTML = "";
+    playlist.forEach((t, i)=>{
+      const row = document.createElement("div");
+      row.className = "row" + (i === currentIndex ? " playing" : "");
+      row.innerHTML =
+        '<div class="idx">' + (i === currentIndex ? '♪' : (i+1)) + '</div>' +
+        '<div class="name"></div>' +
+        '<div class="del"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>';
+      row.querySelector(".name").textContent = t.name;
+      row.addEventListener("click", (e)=>{
+        if(e.target.closest(".del")) return;
+        playIndex(i);
+        closeSheet();
+      });
+      row.querySelector(".del").addEventListener("click", async (e)=>{
+        e.stopPropagation();
+        const id = t.id;
+        await deleteTrack(id);
+        const wasPlaying = i === currentIndex;
+        playlist.splice(i,1);
+        if(wasPlaying){ audio.pause(); currentIndex = -1; updateMeta(null); }
+        else if(i < currentIndex) currentIndex--;
+        renderList();
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  function updateMeta(track){
+    if(!track){
+      trackTitle.textContent = "—";
+      trackArtist.textContent = "曲を選んでください";
+      disc.classList.remove("spinning");
+      return;
+    }
+    trackTitle.textContent = track.name;
+    trackArtist.textContent = "Reel Library";
+    if("mediaSession" in navigator){
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.name,
+        artist: "Reel",
+        album: "Reel Library"
+      });
+    }
+  }
+
+  function playIndex(i){
+    if(i < 0 || i >= playlist.length) return;
+    currentIndex = i;
+    const track = playlist[i];
+    if(objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(track.blob);
+    audio.src = objectUrl;
+    audio.play().catch(()=>{});
+    updateMeta(track);
+    renderList();
+  }
+
+  function togglePlay(){
+    if(currentIndex === -1){
+      if(playlist.length) playIndex(0);
+      return;
+    }
+    if(audio.paused) audio.play(); else audio.pause();
+  }
+
+  audio.addEventListener("play", ()=>{
+    playIcon.outerHTML = '<svg id="playIcon" viewBox="0 0 24 24" fill="currentColor">'+PAUSE_ICON+'</svg>';
+    Object.assign(window, { playIcon: $("playIcon") });
+    disc.classList.add("spinning");
+    if("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+  });
+  audio.addEventListener("pause", ()=>{
+    document.getElementById("playIcon").outerHTML = '<svg id="playIcon" viewBox="0 0 24 24" fill="currentColor">'+PLAY_ICON+'</svg>';
+    disc.classList.remove("spinning");
+    if("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused";
+  });
+  audio.addEventListener("timeupdate", ()=>{
+    if(!audio.duration) return;
+    seek.value = Math.floor((audio.currentTime/audio.duration)*1000);
+    curTime.textContent = fmtTime(audio.currentTime);
+    durTime.textContent = fmtTime(audio.duration);
+  });
+  audio.addEventListener("ended", ()=>{
+    if(currentIndex < playlist.length - 1) playIndex(currentIndex+1);
+    else { audio.pause(); disc.classList.remove("spinning"); }
+  });
+
+  seek.addEventListener("input", ()=>{
+    if(!audio.duration) return;
+    audio.currentTime = (seek.value/1000) * audio.duration;
+  });
+
+  playBtn.addEventListener("click", togglePlay);
+  prevBtn.addEventListener("click", ()=>{
+    if(audio.currentTime > 3){ audio.currentTime = 0; return; }
+    playIndex(Math.max(0, currentIndex-1));
+  });
+  nextBtn.addEventListener("click", ()=>{
+    playIndex(Math.min(playlist.length-1, currentIndex+1));
+  });
+
+  // Media Session (lock screen controls)
+  if("mediaSession" in navigator){
+    navigator.mediaSession.setActionHandler("play", ()=>audio.play());
+    navigator.mediaSession.setActionHandler("pause", ()=>audio.pause());
+    navigator.mediaSession.setActionHandler("previoustrack", ()=>prevBtn.click());
+    navigator.mediaSession.setActionHandler("nexttrack", ()=>nextBtn.click());
+    navigator.mediaSession.setActionHandler("seekto", (d)=>{
+      if(d.seekTime != null && audio.duration) audio.currentTime = d.seekTime;
+    });
+  }
+
+  // ---------- Sheet ----------
+  function openSheet(){ sheet.classList.add("show"); sheetBackdrop.classList.add("show"); }
+  function closeSheet(){ sheet.classList.remove("show"); sheetBackdrop.classList.remove("show"); }
+  openListBtn.addEventListener("click", openSheet);
+  sheetBackdrop.addEventListener("click", closeSheet);
+  clearBtn.addEventListener("click", async ()=>{
+    if(!confirm("プレイリストを全て削除しますか？")) return;
+    audio.pause();
+    await clearAllTracks();
+    playlist = []; currentIndex = -1;
+    updateMeta(null);
+    renderList();
+    closeSheet();
+    showEmpty();
+  });
+
+  // ---------- File picking ----------
+  function showEmpty(){ emptyEl.style.display = "flex"; playerEl.classList.remove("active"); }
+  function showPlayer(){ emptyEl.style.display = "none"; playerEl.classList.add("active"); }
+
+  [pickBtn, addMoreBtn, addMoreBtn2].forEach(btn=>{
+    btn.addEventListener("click", ()=> folderInput.click());
+  });
+
+  folderInput.addEventListener("change", async (e)=>{
+    const files = e.target.files;
+    if(!files || !files.length) return;
+    await addTracks(files);
+    playlist = await getAllTracks();
+    renderList();
+    showPlayer();
+    folderInput.value = "";
+  });
+
+  // ---------- Init ----------
+  (async function init(){
+    db = await openDB();
+    playlist = await getAllTracks();
+    if(playlist.length){
+      renderList();
+      showPlayer();
+    } else {
+      showEmpty();
+    }
+  })();
+
+  // Register service worker for offline app shell
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", ()=>{
+      navigator.serviceWorker.register("sw.js").catch(()=>{});
+    });
+  }
+})();
+</script>
+</body>
+</html>
