@@ -766,6 +766,7 @@
       id: p.id,
       name: p.name,
       pinned: !!p.pinned,
+      avatarUrl: p.avatarBlob ? blobUrl("playlist:"+p.id, p.avatarBlob) : null,
       songs: (p.trackIds||[]).map(tid=>{
         const t = findTrackRecord(tid);
         return t ? { artist:t.artist, song:t.name } : null;
@@ -782,6 +783,13 @@
       if(t && t.order !== i){ t.order = i; await idbPut("tracks", t); }
     }
   }
+  async function updatePlaylistRecord(id, patch){
+    const records = await idbGetAll("playlists");
+    const existing = records.find(r=>r.id===id) || { id };
+    const updated = Object.assign({}, existing, patch, { id });
+    await idbPut("playlists", updated);
+    return updated;
+  }
   async function persistPlaylistTracks(playlistId){
     const p = playlists.find(x=>x.id===playlistId);
     if(!p) return;
@@ -789,8 +797,7 @@
       const t = findTrackByNames(ref.artist, ref.song);
       return t ? t.id : null;
     }).filter(Boolean);
-    const record = { id: playlistId, name: p.name, pinned: !!p.pinned, trackIds };
-    await idbPut("playlists", record);
+    await updatePlaylistRecord(playlistId, { name: p.name, pinned: !!p.pinned, trackIds });
   }
   async function persistArtistMeta(artistName, patch){
     const metas = await idbGetAll("artistMeta");
@@ -1205,7 +1212,7 @@
   const REORDER_ANIM_MS = 260;
 
   function flipMutate(container, mutate){
-    const rows = Array.from(container.querySelectorAll(".song-row"));
+    const rows = Array.from(container.querySelectorAll(".song-swipe"));
     const first = new Map(rows.map(r=>[r, r.getBoundingClientRect()]));
     mutate();
     rows.forEach(r=>{
@@ -1226,14 +1233,14 @@
   function attachDragReorder(container, kind, id){
     container.querySelectorAll(".drag-handle").forEach(handle=>{
       handle.addEventListener("pointerdown", (e)=>{
-        const row = handle.closest(".song-row");
+        const row = handle.closest(".song-swipe");
         if(!row) return;
         const startY = e.clientY;
         let dragging = false;
 
         const longPressTimer = setTimeout(()=>{
           dragging = true;
-          row.classList.add("dragging");
+          row.querySelector(".song-row").classList.add("dragging");
           if(navigator.vibrate) navigator.vibrate(12);
         }, LONG_PRESS_MS);
 
@@ -1243,7 +1250,7 @@
             return;
           }
           ev.preventDefault();
-          const rows = Array.from(container.querySelectorAll(".song-row"));
+          const rows = Array.from(container.querySelectorAll(".song-swipe"));
           const y = ev.clientY;
           for(const r of rows){
             if(r === row) continue;
@@ -1263,8 +1270,8 @@
           document.removeEventListener("pointerup", onUp);
           document.removeEventListener("pointercancel", onUp);
           if(!dragging) return;
-          row.classList.remove("dragging");
-          const newOrderKeys = Array.from(container.querySelectorAll(".song-row")).map(r=>r.dataset.key);
+          row.querySelector(".song-row").classList.remove("dragging");
+          const newOrderKeys = Array.from(container.querySelectorAll(".song-swipe")).map(r=>r.querySelector(".song-row").dataset.key);
           if(kind === "playlist"){
             const p = playlists.find(x=>x.id===id);
             if(p){
@@ -1350,7 +1357,7 @@
     document.getElementById("swipeDeleteTitle").textContent = song;
     const items = ctxType === "playlist"
       ? actionItemHTML("removepl","プレイリストから削除", true) + actionItemHTML("delete","端末から削除", true)
-      : actionItemHTML("removeartist","歌手から削除", true) + actionItemHTML("delete","端末から削除", true);
+      : actionItemHTML("delete","アプリから削除", true);
     document.getElementById("swipeDeleteItems").innerHTML = items;
     swipeDeleteBackdrop.classList.add("show"); swipeDeleteSheet.classList.add("show");
   }
@@ -1752,8 +1759,6 @@
     let items = actionItemHTML("edit","編集") + actionItemHTML("addpl","プレイリストに追加");
     if(ctxType === "playlist"){
       items += actionItemHTML("removepl","プレイリストから削除", true);
-    } else {
-      items += actionItemHTML("removeartist","歌手から削除", true);
     }
     items += actionItemHTML("delete","アプリから削除", true);
     document.getElementById("actionItems").innerHTML = items;
@@ -1860,7 +1865,7 @@
       if(kind === "artist") await persistArtistMeta(id, { pinned:item.pinned });
       else {
         const trackIds = item.songs.map(ref=>{ const t=findTrackByNames(ref.artist, ref.song); return t?t.id:null; }).filter(Boolean);
-        await idbPut("playlists", { id, name:item.name, pinned:item.pinned, trackIds });
+        await updatePlaylistRecord(id, { name:item.name, pinned:item.pinned, trackIds });
       }
       renderHome();
       if(kind === "artist") renderSeeAllArtists(); else renderSeeAllPlaylists();
@@ -1927,7 +1932,7 @@
         if(currentArtistId === newA?.id) renderArtistPage(newA.id);
       } else {
         const trackIds = item.songs.map(ref=>{ const t=findTrackByNames(ref.artist, ref.song); return t?t.id:null; }).filter(Boolean);
-        await idbPut("playlists", { id:pendingRename.id, name:newName, pinned:!!item.pinned, trackIds });
+        await updatePlaylistRecord(pendingRename.id, { name:newName, pinned:!!item.pinned, trackIds });
         await rebuildLibrary();
         if(currentPlaylistId === pendingRename.id) renderPlaylistPage(pendingRename.id);
       }
@@ -2062,14 +2067,14 @@
       if(a) renderArtistBigAvatar(a);
       renderHome();
     } else if(pendingImgTarget.type === "playlist"){
-      const p = playlists.find(x=>x.id===pendingImgTarget.id);
-      if(p){
-        const record = { id:p.id, name:p.name, pinned:!!p.pinned,
-          trackIds: p.songs.map(ref=>{ const t=findTrackByNames(ref.artist, ref.song); return t?t.id:null; }).filter(Boolean),
-          avatarBlob:file };
-        await idbPut("playlists", record);
+      const pid = pendingImgTarget.id;
+      const records = await idbGetAll("playlists");
+      const existing = records.find(r=>r.id===pid);
+      if(existing){
+        existing.avatarBlob = file;
+        await idbPut("playlists", existing);
         await rebuildLibrary();
-        const p2 = playlists.find(x=>x.id===pendingImgTarget.id);
+        const p2 = playlists.find(x=>x.id===pid);
         if(p2) renderPlaylistBigAvatar(p2);
         renderHome(); renderSeeAllPlaylists();
       }
@@ -2219,13 +2224,16 @@
   folderInput.addEventListener("change", async (e)=>{
     const files = e.target.files;
     if(!files || !files.length) return;
-    const beforeCount = allTracksRaw.length;
     await importFiles(files);
     renderHome();
-    if(stack[stack.length-1] === "screen-empty"){ stack.pop(); stack.push("screen-home"); showTop("forward"); }
+    if(stack[stack.length-1] === "screen-empty"){ stack.pop(); stack.push("screen-home"); }
     folderInput.value = "";
-    // 初回インポート直後だけ、重複曲がないか自動でチェックする
-    if(beforeCount === 0 && findDuplicateGroups().length){ openDuplicatesScreen(); }
+    // フォルダ読み込みのたびに、重複曲がないか自動でチェックする
+    if(findDuplicateGroups().length){
+      renderDuplicates();
+      stack.push("screen-duplicates");
+    }
+    showTop("forward");
   });
 
   // ---------- Backup: export / import ----------
